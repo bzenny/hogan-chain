@@ -1,1 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hogan Chain & Half-Gallon Tech Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .role-badge { transition: all 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans min-h-screen">
+    <div class="max-w-7xl mx-auto p-6">
+        
+        <header class="flex flex-col md:flex-row justify-between items-center pb-6 mb-6 border-b border-slate-800 gap-4">
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight text-cyan-400">HOGAN CHAIN SIMULATOR</h1>
+                <p class="text-xs text-slate-400 font-mono mt-1">Multi-Tier Architecture Laboratory (L1–L4)</p>
+            </div>
 
+            <div class="bg-slate-800 p-1.5 rounded-lg border border-slate-700 flex space-x-2">
+                <button onclick="setRole('master_dev')" id="btn-master_dev" class="role-btn px-3 py-1.5 text-xs font-semibold rounded-md bg-cyan-600 text-white">
+                    Master Dev
+                </button>
+                <button onclick="setRole('prime_user')" id="btn-prime_user" class="role-btn px-3 py-1.5 text-xs font-semibold rounded-md text-slate-400 hover:text-white">
+                    Prime User
+                </button>
+                <button onclick="setRole('test_user')" id="btn-test_user" class="role-btn px-3 py-1.5 text-xs font-semibold rounded-md text-slate-400 hover:text-white">
+                    Test User
+                </button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-slate-800/80 p-4 rounded-lg border border-slate-700/80">
+                <div class="text-xs font-mono text-slate-400">L1 NATIVE (HGK)</div>
+                <div class="text-2xl font-bold text-white mt-1" id="l1-supply">100,000.00</div>
+                <div class="text-[10px] text-emerald-400 mt-1">Actual Plane • Settlement Anchor</div>
+            </div>
+            <div class="bg-slate-800/80 p-4 rounded-lg border border-slate-700/80">
+                <div class="text-xs font-mono text-slate-400">L2 UTILITY (HGXC)</div>
+                <div class="text-2xl font-bold text-cyan-300 mt-1" id="l2-supply">500,000.00</div>
+                <div class="text-[10px] text-cyan-400 mt-1">Half-Gallon Tech • Workloads</div>
+            </div>
+            <div class="bg-slate-800/80 p-4 rounded-lg border border-slate-700/80">
+                <div class="text-xs font-mono text-slate-400">L1 FEE BURNED</div>
+                <div class="text-2xl font-bold text-amber-400 mt-1" id="burned-hgk">0.00 HGK</div>
+                <div class="text-[10px] text-amber-500 mt-1">Deflationary Mechanism</div>
+            </div>
+            <div class="bg-slate-800/80 p-4 rounded-lg border border-slate-700/80">
+                <div class="text-xs font-mono text-slate-400">BLOCK HEIGHT</div>
+                <div class="text-2xl font-bold text-purple-400 mt-1" id="block-height">#0</div>
+                <div class="text-[10px] text-purple-300 mt-1">Synced to Node</div>
+            </div>
+        </div>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <div class="lg:col-span-1 bg-slate-800 p-5 rounded-lg border border-slate-700">
+                <h2 class="text-sm font-semibold text-slate-200 uppercase tracking-wider mb-4 pb-2 border-b border-slate-700">
+                    <span id="role-title">Master Dev</span> Controls
+                </h2>
+
+                <div id="panel-master_dev" class="role-panel space-y-3">
+                    <p class="text-xs text-slate-400 mb-2">Full system privileges: Force mining, adjust parameter curves, and reset sandboxes.</p>
+                    <button onclick="triggerAction('mine')" class="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs rounded transition">
+                        Force Mine L1 Block
+                    </button>
+                    <button onclick="triggerAction('bridge')" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium text-xs rounded transition border border-slate-600">
+                        Rebalance Bridge Vault (35k HGK)
+                    </button>
+                    <button onclick="triggerAction('reset_l4')" class="w-full py-2 bg-rose-900/60 hover:bg-rose-800 text-rose-200 font-medium text-xs rounded transition border border-rose-700">
+                        Flush L4 Dev Sandbox State
+                    </button>
+                </div>
+
+                <div id="panel-prime_user" class="role-panel space-y-3 hidden">
+                    <p class="text-xs text-slate-400 mb-2">Execute business workloads and dual-ledger RWA verification proofs on L2.</p>
+                    <button onclick="triggerAction('ai_job')" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded transition">
+                        Run AI Multi-Agent Workload (0.25 HGXC)
+                    </button>
+                    <button onclick="triggerAction('quantum_job')" class="w-full py-2 bg-purple-600 hover:bg-purple-500 text-white font-medium text-xs rounded transition">
+                        Run Quantum Circuit Simulation (2.50 HGXC)
+                    </button>
+                    <button onclick="triggerAction('rwa_proof')" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded transition">
+                        Submit Dual-Ledger RWA Proof (0.10 HGXC)
+                    </button>
+                </div>
+
+                <div id="panel-test_user" class="role-panel space-y-3 hidden">
+                    <p class="text-xs text-slate-400 mb-2">Explore L4 ephemeral sandbox space with faucet test credits.</p>
+                    <button onclick="triggerAction('faucet')" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs rounded transition">
+                        Request L4 Sandbox Test Credits
+                    </button>
+                    <button onclick="triggerAction('sandbox_test')" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium text-xs rounded transition border border-slate-600">
+                        Execute High-Entropy Test Call
+                    </button>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-slate-950 p-5 rounded-lg border border-slate-800 font-mono">
+                <div class="flex justify-between items-center mb-3 pb-2 border-b border-slate-800">
+                    <span class="text-xs text-slate-400">SYSTEM TELEMETRY LOG</span>
+                    <span class="text-[10px] text-emerald-400 flex items-center">
+                        <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse mr-1.5"></span> LIVE
+                    </span>
+                </div>
+                <div id="log-output" class="h-64 overflow-y-auto space-y-1.5 text-xs text-slate-300">
+                    <div class="text-slate-500">[00:00:00] Hogan Chain node initialized. Ready for simulation.</div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        let currentRole = 'master_dev';
+
+        function setRole(role) {
+            currentRole = role;
+            document.querySelectorAll('.role-panel').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.role-btn').forEach(el => {
+                el.classList.remove('bg-cyan-600', 'text-white');
+                el.classList.add('text-slate-400');
+            });
+
+            document.getElementById(`panel-${role}`).classList.remove('hidden');
+            document.getElementById(`btn-${role}`).classList.add('bg-cyan-600', 'text-white');
+            document.getElementById(`btn-${role}`).classList.remove('text-slate-400');
+            
+            const titles = {
+                'master_dev': 'Master Dev',
+                'prime_user': 'Prime User',
+                'test_user': 'Test User'
+            };
+            document.getElementById('role-title').innerText = titles[role];
+            addLog(`Switched active view session to [${titles[role]}].`);
+        }
+
+        function addLog(msg) {
+            const time = new Date().toLocaleTimeString();
+            const logBox = document.getElementById('log-output');
+            const entry = document.createElement('div');
+            entry.innerHTML = `<span class="text-slate-500">[${time}]</span> <span class="text-cyan-300">[${currentRole.toUpperCase()}]</span> ${msg}`;
+            logBox.appendChild(entry);
+            logBox.scrollTop = logBox.scrollHeight;
+        }
+
+        function triggerAction(action) {
+            addLog(`Executed action: <strong class="text-white">${action}</strong>`);
+            // Connects to Go server REST endpoints in step 3
+            fetch(`/api/action?role=${currentRole}&action=${action}`)
+                .then(res => res.json())
+                .then(data => {
+                    if(data.status === "ok") {
+                        addLog(data.message);
+                        if(data.block_height) document.getElementById('block-height').innerText = `#${data.block_height}`;
+                        if(data.burned) document.getElementById('burned-hgk').innerText = `${data.burned.toFixed(2)} HGK`;
+                    }
+                }).catch(() => {
+                    addLog(`Simulated local update for ${action}.`);
+                });
+        }
+    </script>
+</body>
+</html>
