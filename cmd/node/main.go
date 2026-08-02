@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	l1     *l1_engine.L1Ledger
-	l2     *l2_business.L2Engine
+	l1      *l1_engine.L1Ledger
+	l2      *l2_business.L2Engine
+	sre     *l2_business.SimilRarityEngine
 	relayer *bridge.BridgeRelayer
-	l3     *l3_tenant.L3Manager
+	l3      *l3_tenant.L3Manager
 )
 
 func main() {
@@ -25,21 +26,23 @@ func main() {
 	fmt.Println("   HOGAN CHAIN & HALF-GALLON TECH NODE BOOTING   ")
 	fmt.Println("==================================================")
 
-	// Initialize System Components
+	// Initialize System Core
 	l1 = l1_engine.NewL1Ledger()
 	l2 = l2_business.NewL2Engine()
+	sre = l2_business.NewSimilRarityEngine()
 	relayer = bridge.NewBridgeRelayer(l1, l2)
 	l3 = l3_tenant.NewL3Manager()
 
-	// Register Default L3 Tenant space for testing
+	// Register Default L3 Sub-State
 	l3.RegisterTenantLease("TCSi_RECOVERY_HUB", "0x_USER_DEMO", 24)
 	l3.SetSubStateValue("TCSi_RECOVERY_HUB", "DUAL_LEDGER_STATUS", "VERIFIED")
 
-	// Set HTTP Endpoints
+	// HTTP Routes
 	http.HandleFunc("/", serveDashboard)
 	http.HandleFunc("/api/action", handleAction)
+	http.HandleFunc("/api/telemetry", handleTelemetry)
 
-	fmt.Println("\n[NODE ONLINE] Live Web Dashboard running at: http://localhost:8080")
+	fmt.Println("\n[NODE ONLINE] Telemetry Dashboard: http://localhost:8080")
 	fmt.Println("Press Ctrl+C to stop.")
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
@@ -48,10 +51,36 @@ func main() {
 func serveDashboard(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFiles("web/templates/index.html")
 	if err != nil {
-		http.Error(w, "Dashboard template error: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Template render error: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	tmpl.Execute(w, nil)
+}
+
+func handleTelemetry(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	l1.Mu.Lock()
+	l1Supply := l1.TotalSupply
+	burned := l1.BurnedTokens
+	height := l1.BlockHeight
+	l1.Mu.Unlock()
+
+	l2.Mu.Lock()
+	l2UserBal := l2.Balances["0x_USER_DEMO"]
+	l2.Mu.Unlock()
+
+	metrics := map[string]interface{}{
+		"l1_supply":     l1Supply,
+		"burned_hgk":    burned,
+		"block_height":  height,
+		"l2_user_demo":  l2UserBal,
+		"locked_bridge": relayer.LockedHGK,
+		"minted_bridge": relayer.MintedHGXC,
+		"sre_history":   sre.GetLatestMetrics(),
+	}
+
+	json.NewEncoder(w).Encode(metrics)
 }
 
 func handleAction(w http.ResponseWriter, r *http.Request) {
@@ -77,24 +106,26 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		} else {
 			response = map[string]interface{}{
 				"status":  "ok",
-				"message": "Locked 10 HGK on L1 ---> Minted 50 HGXC on L2 via Bridge Relayer.",
+				"message": "Locked 10 HGK on L1 ---> Minted 50 HGXC on L2 via Bridge.",
 			}
 		}
 	case "ai_job":
 		success := l2.ExecuteWorkload("0x_USER_DEMO", l2_business.AI_Inference)
+		sreItem := sre.EvaluateCollision(l2_business.DomainCognitive, l2_business.DomainSocioLogic)
 		height, burned := l1.MineBlock(1)
 		response = map[string]interface{}{
 			"status":       "ok",
-			"message":      fmt.Sprintf("Executed AI Workload (Success: %t)", success),
+			"message":      fmt.Sprintf("AI Workload Executed | SRE SRSI: %.2f (ADI: %.2f)", sreItem.SRSI, sreItem.AnalogicalDistance),
 			"block_height": height,
 			"burned":       burned,
 		}
 	case "quantum_job":
 		success := l2.ExecuteWorkload("0x_USER_DEMO", l2_business.Quantum_Circuit)
+		sreItem := sre.EvaluateCollision(l2_business.DomainQuantum, l2_business.DomainPhysio)
 		height, burned := l1.MineBlock(1)
 		response = map[string]interface{}{
 			"status":       "ok",
-			"message":      fmt.Sprintf("Executed Quantum Circuit Workload (Success: %t)", success),
+			"message":      fmt.Sprintf("Quantum Matrix Simulation Executed | SRE SRSI: %.2f (EUR: %.2f)", sreItem.SRSI, sreItem.EntropyUtilityRatio),
 			"block_height": height,
 			"burned":       burned,
 		}
@@ -104,7 +135,7 @@ func handleAction(w http.ResponseWriter, r *http.Request) {
 		height, burned := l1.MineBlock(1)
 		response = map[string]interface{}{
 			"status":       "ok",
-			"message":      fmt.Sprintf("Submitted RWA Dual-Ledger Verification Proof on L2 (Success: %t)", success),
+			"message":      fmt.Sprintf("Submitted Dual-Ledger RWA Proof | Success: %t", success),
 			"block_height": height,
 			"burned":       burned,
 		}
