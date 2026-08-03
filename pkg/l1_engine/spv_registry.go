@@ -3,8 +3,11 @@ package l1_engine
 import (
 	"errors"
 	"fmt"
-	"sync"
+	"sort"
 	"time"
+
+	"github.com/yourusername/hogan-chain/internal/eventbus"
+	"github.com/yourusername/hogan-chain/internal/persistence"
 )
 
 type AssetStatus string
@@ -15,71 +18,111 @@ const (
 	AssetRetired    AssetStatus = "RETIRED"
 )
 
-// CentAmount uses int64 to avoid float precision issues across state transitions
 type CentAmount int64
-
+type ValuationVersion struct {
+	Version               uint32     `json:"version"`
+	DeterminedValue       CentAmount `json:"determined_value_cents"`
+	RecognizedLiabilities CentAmount `json:"recognized_liabilities_cents"`
+	ApprovedBy            string     `json:"approved_by"`
+	CreatedAt             time.Time  `json:"created_at"`
+}
 type RWAAssetRecord struct {
-	AssetID                   string      `json:"asset_id"`
-	SPVID                     string      `json:"spv_id"`
-	AssetClass                string      `json:"asset_class"`
-	Jurisdiction              string      `json:"jurisdiction"`
-	DeterminedValue           CentAmount  `json:"determined_value_cents"`
-	RecognizedLiabilities     CentAmount  `json:"recognized_liabilities_cents"`
-	AuthorizedTokenizationBps uint16      `json:"authorized_tokenization_bps"` // Basis points (e.g., 6000 = 60%)
-	ValuationVersion          uint32      `json:"valuation_version"`
-	ControllerAddress         string      `json:"controller_address"`
-	Status                    AssetStatus `json:"status"`
-	LastUpdated               int64       `json:"last_updated"`
+	AssetID                   string             `json:"asset_id"`
+	SPVID                     string             `json:"spv_id"`
+	AssetClass                string             `json:"asset_class"`
+	Jurisdiction              string             `json:"jurisdiction"`
+	Currency                  string             `json:"currency"`
+	DeterminedValue           CentAmount         `json:"determined_value_cents"`
+	RecognizedLiabilities     CentAmount         `json:"recognized_liabilities_cents"`
+	AuthorizedTokenizationBps uint16             `json:"authorized_tokenization_bps"`
+	ValuationVersion          uint32             `json:"valuation_version"`
+	ControllerAddress         string             `json:"controller_address"`
+	Status                    AssetStatus        `json:"status"`
+	History                   []ValuationVersion `json:"history"`
+	LastUpdated               time.Time          `json:"last_updated"`
 }
-
 type SPVRegistry struct {
-	mu     sync.RWMutex
-	Assets map[string]*RWAAssetRecord
+	store persistence.Store
+	bus   *eventbus.Bus
 }
 
-func NewSPVRegistry() *SPVRegistry {
-	return &SPVRegistry{
-		Assets: make(map[string]*RWAAssetRecord),
-	}
+func NewSPVRegistry(store persistence.Store, bus *eventbus.Bus) *SPVRegistry {
+	return &SPVRegistry{store: store, bus: bus}
 }
-
-// RegisterAsset anchors a new SPV or RWA on Layer 1
-func (r *SPVRegistry) RegisterAsset(record *RWAAssetRecord) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if _, exists := r.Assets[record.AssetID]; exists {
-		return fmt.Errorf("asset %s already registered on L1", record.AssetID)
+func (r *SPVRegistry) RegisterAsset(actor string, record RWAAssetRecord) error {
+	if record.AssetID == "" || record.SPVID == "" {
+		return errors.New("asset id and spv id required")
 	}
-
+	if record.DeterminedValue <= 0 {
+		return errors.New("determined value must be positive")
+	}
+	if record.RecognizedLiabilities < 0 || record.RecognizedLiabilities > record.DeterminedValue {
+		return errors.New("invalid liabilities")
+	}
+	if record.AuthorizedTokenizationBps > 10000 {
+		return errors.New("tokenization bps cannot exceed 10000")
+	}
+	var existing RWAAssetRecord
+	if ok, _ := r.store.Get("assets", record.AssetID, &existing); ok {
+		return fmt.Errorf("asset %s already exists", record.AssetID)
+	}
 	record.ValuationVersion = 1
 	record.Status = AssetActive
-	record.LastUpdated = time.Now().Unix()
-	r.Assets[record.AssetID] = record
-
-	fmt.Printf("[L1 SPV REGISTRY] Anchored Asset '%s' (SPV: %s) | Value: $%.2f | Ceiling: %d bps\n",
-		record.AssetID, record.SPVID, float64(record.DeterminedValue)/100.0, record.AuthorizedTokenizationBps)
-
-	return nil
-}
-
-// UpdateValuation increments the versioned valuation on L1
-func (r *SPVRegistry) UpdateValuation(assetID string, newValue, newLiabilities CentAmount) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	asset, exists := r.Assets[assetID]
-	if !exists {
-		return errors.New("asset not found on L1")
+	record.Currency = defaultString(record.Currency, "USD")
+	record.LastUpdated = time.Now().UTC()
+	record.History = []ValuationVersion{{Version: 1, DeterminedValue: record.DeterminedValue, RecognizedLiabilities: record.RecognizedLiabilities, ApprovedBy: actor, CreatedAt: record.LastUpdated}}
+	if err := r.store.Put("assets", record.AssetID, record); err != nil {
+		return err
 	}
-
-	asset.DeterminedValue = newValue
-	asset.RecognizedLiabilities = newLiabilities
-	asset.ValuationVersion++
-	asset.LastUpdated = time.Now().Unix()
-
-	fmt.Printf("[L1 SPV REGISTRY] Valuation Updated '%s' -> Version %d | Net Value: $%.2f\n",
-		assetID, asset.ValuationVersion, float64(newValue-newLiabilities)/100.0)
-
-	return nil
+	return r.bus.Publish(persistence.EventRecord{Type: "AssetRegistered", ActorID: actor, Layer: "L1", Resource: record.AssetID, Message: "authoritative OCA/RWA asset anchored"})
+}
+func defaultString(v, d string) string {
+	if v == "" {
+		return d
+	}
+	return v
+}
+func (r *SPVRegistry) GetAsset(id string) (*RWAAssetRecord, error) {
+	var a RWAAssetRecord
+	ok, err := r.store.Get("assets", id, &a)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, errors.New("asset not found")
+	}
+	return &a, nil
+}
+func (r *SPVRegistry) ListAssets() ([]RWAAssetRecord, error) {
+	items, err := r.store.List("assets", func() any { return &RWAAssetRecord{} })
+	if err != nil {
+		return nil, err
+	}
+	out := make([]RWAAssetRecord, 0, len(items))
+	for _, x := range items {
+		out = append(out, *(x.(*RWAAssetRecord)))
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].AssetID < out[j].AssetID })
+	return out, nil
+}
+func (r *SPVRegistry) UpdateValuation(actor, assetID string, newValue, newLiabilities CentAmount) error {
+	a, err := r.GetAsset(assetID)
+	if err != nil {
+		return err
+	}
+	if a.Status == AssetRetired {
+		return errors.New("retired asset cannot be revalued")
+	}
+	if newValue <= 0 || newLiabilities < 0 || newLiabilities > newValue {
+		return errors.New("invalid valuation")
+	}
+	a.ValuationVersion++
+	a.DeterminedValue = newValue
+	a.RecognizedLiabilities = newLiabilities
+	a.LastUpdated = time.Now().UTC()
+	a.History = append(a.History, ValuationVersion{Version: a.ValuationVersion, DeterminedValue: newValue, RecognizedLiabilities: newLiabilities, ApprovedBy: actor, CreatedAt: a.LastUpdated})
+	if err := r.store.Put("assets", a.AssetID, a); err != nil {
+		return err
+	}
+	return r.bus.Publish(persistence.EventRecord{Type: "ValuationUpdated", ActorID: actor, Layer: "L1", Resource: assetID, Message: fmt.Sprintf("valuation version %d approved", a.ValuationVersion)})
 }

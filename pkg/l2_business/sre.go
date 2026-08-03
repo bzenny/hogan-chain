@@ -1,100 +1,54 @@
 package l2_business
 
 import (
+	"errors"
 	"fmt"
-	"math"
-	"math/rand"
-	"sync"
-	"time"
+
+	"github.com/yourusername/hogan-chain/pkg/l1_engine"
 )
 
-type DomainType string
-
-const (
-	DomainCognitive  DomainType = "COGNITIVE_AI"
-	DomainQuantum    DomainType = "QUANTUM_COMPLEXITY"
-	DomainPhysio     DomainType = "PHYSIOLOGICAL_SYSTEMS"
-	DomainSocioLogic DomainType = "SOCIO_TECHNICAL"
-)
-
-// EmergentIntersection holds metrics generated during Infinite -> Probable plane traversal
-type EmergentIntersection struct {
-	ID                  string     `json:"id"`
-	DomainA             DomainType `json:"domain_a"`
-	DomainB             DomainType `json:"domain_b"`
-	AnalogicalDistance  float64    `json:"adi"`  // ADI: Vector/conceptual distance (0.0 - 1.0)
-	EntropyUtilityRatio float64    `json:"eur"`  // EUR: Productive noise vs coherence
-	SRSI                float64    `json:"srsi"` // Simil-Rarity Salience Index (0.0 - 1.0)
-	FlaggedForReview    bool       `json:"flagged"`
-	Timestamp           int64      `json:"timestamp"`
+type RWAExecutionEngine struct {
+	L1Registry *l1_engine.SPVRegistry
+	Minting    *l1_engine.MintingService
 }
 
-type SimilRarityEngine struct {
-	mu            sync.Mutex
-	History       []*EmergentIntersection
-	MinThreshold  float64 // Minimum SRSI required to crystallize into L1 Actual Plane
-	HighConfidence float64 // Threshold to auto-flag for human/master dev review
+func NewRWAExecutionEngine(registry *l1_engine.SPVRegistry, minting *l1_engine.MintingService) *RWAExecutionEngine {
+	return &RWAExecutionEngine{L1Registry: registry, Minting: minting}
+}
+func (e *RWAExecutionEngine) SimulateFractionalization(assetID string, requested l1_engine.CentAmount) (l1_engine.CentAmount, error) {
+	asset, err := e.L1Registry.GetAsset(assetID)
+	if err != nil {
+		return 0, err
+	}
+	if asset.Status != l1_engine.AssetActive {
+		return 0, errors.New("asset is not active")
+	}
+	net := asset.DeterminedValue - asset.RecognizedLiabilities
+	ceiling := (net * l1_engine.CentAmount(asset.AuthorizedTokenizationBps)) / 10000
+	existing, err := e.Minting.TotalActiveExposure(assetID)
+	if err != nil {
+		return 0, err
+	}
+	available := ceiling - existing
+	if requested <= 0 || requested > available {
+		return available, fmt.Errorf("requested exposure exceeds available ceiling")
+	}
+	return available, nil
 }
 
-func NewSimilRarityEngine() *SimilRarityEngine {
-	rand.Seed(time.Now().UnixNano())
-	return &SimilRarityEngine{
-		History:        make([]*EmergentIntersection, 0),
-		MinThreshold:   0.60,
-		HighConfidence: 0.78,
-	}
+type SREInput struct {
+	ADI               float64
+	EUR               float64
+	SaturationPenalty float64
 }
 
-// EvaluateCollision samples from the Infinite Plane, filters in Probable Plane, and calculates SRSI
-func (sre *SimilRarityEngine) EvaluateCollision(dA, dB DomainType) *EmergentIntersection {
-	sre.mu.Lock()
-	defer sre.mu.Unlock()
-
-	// 1. Calculate Analogical Distance Index (ADI): High distance = uncorrelated domains
-	adi := 0.55 + (rand.Float64() * 0.42) // Normalized range ~0.55 - 0.97
-
-	// 2. Calculate Entropy-Utility Ratio (EUR): Noise vs structural mapping potential
-	eur := 0.40 + (rand.Float64() * 0.55) // Range ~0.40 - 0.95
-
-	// 3. Compute Simil-Rarity Salience Index (SRSI)
-	// Formula: SRSI = (ADI * 0.5) + (EUR * 0.5) - (Penalty for recursive saturation noise if EUR > 0.90)
-	srsi := (adi * 0.5) + (eur * 0.5)
-	if eur > 0.90 {
-		srsi -= 0.08 // Saturation noise penalty
+func ScoreSRE(in SREInput) (float64, bool) {
+	score := in.ADI*.5 + in.EUR*.5 - in.SaturationPenalty
+	if score < 0 {
+		score = 0
 	}
-
-	// Clamp SRSI
-	srsi = math.Max(0.0, math.Min(1.0, srsi))
-
-	id := fmt.Sprintf("SRI-%d", time.Now().UnixNano()%100000)
-	flagged := srsi >= sre.HighConfidence
-
-	intersection := &EmergentIntersection{
-		ID:                  id,
-		DomainA:             dA,
-		DomainB:             dB,
-		AnalogicalDistance:  math.Round(adi*100) / 100,
-		EntropyUtilityRatio: math.Round(eur*100) / 100,
-		SRSI:                math.Round(srsi*100) / 100,
-		FlaggedForReview:    flagged,
-		Timestamp:           time.Now().Unix(),
+	if score > 1 {
+		score = 1
 	}
-
-	sre.History = append(sre.History, intersection)
-
-	fmt.Printf("[SRE ENGINE] Collision Analyzed [%s <-> %s] | ADI: %.2f | EUR: %.2f | SRSI: %.2f (Flagged: %t)\n",
-		dA, dB, adi, eur, srsi, flagged)
-
-	return intersection
-}
-
-// GetLatestMetrics returns the 5 most recent emergent collisions for live telemetry
-func (sre *SimilRarityEngine) GetLatestMetrics() []*EmergentIntersection {
-	sre.mu.Lock()
-	defer sre.mu.Unlock()
-
-	if len(sre.History) <= 5 {
-		return sre.History
-	}
-	return sre.History[len(sre.History)-5:]
+	return score, score >= .78
 }

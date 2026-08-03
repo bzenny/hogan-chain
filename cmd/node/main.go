@@ -1,150 +1,36 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"html/template"
+	"github.com/yourusername/hogan-chain/internal/app"
+	webui "github.com/yourusername/hogan-chain/internal/web"
 	"log"
 	"net/http"
-
-	"github.com/yourusername/hogan-chain/pkg/bridge"
-	"github.com/yourusername/hogan-chain/pkg/l1_engine"
-	"github.com/yourusername/hogan-chain/pkg/l2_business"
-	"github.com/yourusername/hogan-chain/pkg/l3_tenant"
-)
-
-var (
-	l1      *l1_engine.L1Ledger
-	l2      *l2_business.L2Engine
-	sre     *l2_business.SimilRarityEngine
-	relayer *bridge.BridgeRelayer
-	l3      *l3_tenant.L3Manager
+	"os"
 )
 
 func main() {
-	fmt.Println("==================================================")
-	fmt.Println("   HOGAN CHAIN & HALF-GALLON TECH NODE BOOTING   ")
-	fmt.Println("==================================================")
-
-	// Initialize System Core
-	l1 = l1_engine.NewL1Ledger()
-	l2 = l2_business.NewL2Engine()
-	sre = l2_business.NewSimilRarityEngine()
-	relayer = bridge.NewBridgeRelayer(l1, l2)
-	l3 = l3_tenant.NewL3Manager()
-
-	// Register Default L3 Sub-State
-	l3.RegisterTenantLease("TCSi_RECOVERY_HUB", "0x_USER_DEMO", 24)
-	l3.SetSubStateValue("TCSi_RECOVERY_HUB", "DUAL_LEDGER_STATUS", "VERIFIED")
-
-	// HTTP Routes
-	http.HandleFunc("/", serveDashboard)
-	http.HandleFunc("/api/action", handleAction)
-	http.HandleFunc("/api/telemetry", handleTelemetry)
-
-	fmt.Println("\n[NODE ONLINE] Telemetry Dashboard: http://localhost:8080")
-	fmt.Println("Press Ctrl+C to stop.")
-
-	log.Fatal(http.ListenAndServe(":8080", nil))
-}
-
-func serveDashboard(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.ParseFiles("web/templates/index.html")
+	genesis := env("GENESIS_PATH", "config/genesis.json")
+	db := env("DB_PATH", "data/hogan-chain.db")
+	port := env("PORT", "8080")
+	a, err := app.Build(genesis, db)
 	if err != nil {
-		http.Error(w, "Template render error: "+err.Error(), http.StatusInternalServerError)
-		return
+		log.Fatal(err)
 	}
-	tmpl.Execute(w, nil)
+	defer a.Close()
+	server, err := webui.New(a)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("==================================================")
+	fmt.Println(" HOGAN CHAIN & HALF-GALLON TECH SYSTEM MANAGER")
+	fmt.Println("==================================================")
+	fmt.Printf("Dashboard: http://localhost:%s\n", port)
+	log.Fatal(http.ListenAndServe(":"+port, server.Routes()))
 }
-
-func handleTelemetry(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	l1.Mu.Lock()
-	l1Supply := l1.TotalSupply
-	burned := l1.BurnedTokens
-	height := l1.BlockHeight
-	l1.Mu.Unlock()
-
-	l2.Mu.Lock()
-	l2UserBal := l2.Balances["0x_USER_DEMO"]
-	l2.Mu.Unlock()
-
-	metrics := map[string]interface{}{
-		"l1_supply":     l1Supply,
-		"burned_hgk":    burned,
-		"block_height":  height,
-		"l2_user_demo":  l2UserBal,
-		"locked_bridge": relayer.LockedHGK,
-		"minted_bridge": relayer.MintedHGXC,
-		"sre_history":   sre.GetLatestMetrics(),
+func env(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
 	}
-
-	json.NewEncoder(w).Encode(metrics)
-}
-
-func handleAction(w http.ResponseWriter, r *http.Request) {
-	role := r.URL.Query().Get("role")
-	action := r.URL.Query().Get("action")
-
-	w.Header().Set("Content-Type", "application/json")
-	var response map[string]interface{}
-
-	switch action {
-	case "mine":
-		height, burned := l1.MineBlock(1)
-		response = map[string]interface{}{
-			"status":       "ok",
-			"message":      fmt.Sprintf("Block #%d mined by %s.", height, role),
-			"block_height": height,
-			"burned":       burned,
-		}
-	case "bridge":
-		err := relayer.LockL1AndMintL2("0x_FOUNDER_TREASURY", 10.0)
-		if err != nil {
-			response = map[string]interface{}{"status": "error", "message": err.Error()}
-		} else {
-			response = map[string]interface{}{
-				"status":  "ok",
-				"message": "Locked 10 HGK on L1 ---> Minted 50 HGXC on L2 via Bridge.",
-			}
-		}
-	case "ai_job":
-		success := l2.ExecuteWorkload("0x_USER_DEMO", l2_business.AI_Inference)
-		sreItem := sre.EvaluateCollision(l2_business.DomainCognitive, l2_business.DomainSocioLogic)
-		height, burned := l1.MineBlock(1)
-		response = map[string]interface{}{
-			"status":       "ok",
-			"message":      fmt.Sprintf("AI Workload Executed | SRE SRSI: %.2f (ADI: %.2f)", sreItem.SRSI, sreItem.AnalogicalDistance),
-			"block_height": height,
-			"burned":       burned,
-		}
-	case "quantum_job":
-		success := l2.ExecuteWorkload("0x_USER_DEMO", l2_business.Quantum_Circuit)
-		sreItem := sre.EvaluateCollision(l2_business.DomainQuantum, l2_business.DomainPhysio)
-		height, burned := l1.MineBlock(1)
-		response = map[string]interface{}{
-			"status":       "ok",
-			"message":      fmt.Sprintf("Quantum Matrix Simulation Executed | SRE SRSI: %.2f (EUR: %.2f)", sreItem.SRSI, sreItem.EntropyUtilityRatio),
-			"block_height": height,
-			"burned":       burned,
-		}
-	case "rwa_proof":
-		success := l2.ExecuteWorkload("0x_USER_DEMO", l2_business.DualLedger_Verify)
-		l3.SetSubStateValue("TCSi_RECOVERY_HUB", "LAST_PROOF_BLOCK", fmt.Sprintf("%d", l1.BlockHeight))
-		height, burned := l1.MineBlock(1)
-		response = map[string]interface{}{
-			"status":       "ok",
-			"message":      fmt.Sprintf("Submitted Dual-Ledger RWA Proof | Success: %t", success),
-			"block_height": height,
-			"burned":       burned,
-		}
-	default:
-		response = map[string]interface{}{
-			"status":  "ok",
-			"message": fmt.Sprintf("Action [%s] processed for role [%s].", action, role),
-		}
-	}
-
-	json.NewEncoder(w).Encode(response)
+	return d
 }

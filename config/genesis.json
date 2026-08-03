@@ -1,1 +1,28 @@
-
+{
+  "chain_id": "hogan-chain-local-v2",
+  "block_interval_seconds": 10,
+  "tokens": {
+    "hgk": {
+      "symbol": "HGK",
+      "decimals": 4,
+      "max_supply_units": 1000000000,
+      "allocations": {
+        "HOGANCHAIN_PRIME_TREASURY": 400000000,
+        "L1_L2_BRIDGE_VAULT": 350000000,
+        "L3_OPERATIONS_RESERVE": 150000000,
+        "SYSTEM_SAFETY_RESERVE": 100000000
+      }
+    },
+    "hgxc": {
+      "symbol": "HGXC",
+      "decimals": 4,
+      "max_supply_units": 5000000000,
+      "allocations": {
+        "HGT_COMPUTE_TREASURY": 2000000000,
+        "L2_BRIDGE_RESERVE": 1750000000,
+        "L3_PROGRAM_RESERVE": 750000000,
+        "L4_SANDBOX_FAUCET": 500000000
+      }
+    }
+  }
+}
